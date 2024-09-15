@@ -25,4 +25,6 @@ venv/
 
 persist_directory/
 .key
-
+.mp3
+# Ignore Python bytecode cache directories
+__pycache__/
