@@ -21,10 +21,10 @@ __pycache__/
 # Ignore Python virtual environment
 venv/
 
-.pdf
+*.pdf
 
 persist_directory/
-.key
-.mp3
+*.key
+*.mp3
 # Ignore Python bytecode cache directories
 __pycache__/
