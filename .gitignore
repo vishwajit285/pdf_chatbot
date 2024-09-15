@@ -20,3 +20,9 @@ __pycache__/
 /.idea/
 # Ignore Python virtual environment
 venv/
+
+.pdf
+
+persist_directory/
+.key
+
