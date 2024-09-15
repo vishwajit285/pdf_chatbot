@@ -1,0 +1,22 @@
+# Ignore all .log files
+*.log
+
+# Ignore node_modules directory (commonly used in Node.js projects)
+node_modules/
+
+# Ignore environment variable files
+.env
+
+# Ignore Python bytecode files
+__pycache__/
+*.py[cod]
+
+# Ignore build directories
+/dist/
+/build/
+
+# Ignore IDE configuration files
+/.vscode/
+/.idea/
+# Ignore Python virtual environment
+venv/
