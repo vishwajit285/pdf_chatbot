@@ -27,9 +27,9 @@ your_project/
 │   ├── pdf_handler.py          # Handles PDF processing and embedding
 │   ├── chroma_manager.py       # Manages ChromaDB client and embedding storage
 │   ├── retrieval.py            # Provides retrieval functionalities for querying PDFs
+│   ├── answer_audio_handler.py # For converting the answer to the mp3 format
+│   ├── speech_handler.py       # For capturing voice input
 │   ├── summarization.py        # Summarizes the extracted PDF text
-│   ├── annotations.py          # Utilities for handling PDF metadata and annotations
-│   ├── recommendations.py      # Recommends documents based on embeddings
 │   ├── external_data.py        # Handles fetching and processing of external data
 │   └── security.py             # Implements security measures for PDF handling
 ├── requirements.txt            # Python dependencies required by the project
@@ -56,8 +56,6 @@ your_project/
 5. **Summarization**:
    - The application summarizes long PDFs, allowing users to quickly grasp the main points.
 
-6. **Recommendations**:
-   - Based on text embeddings, the system can recommend similar documents.
 
 ## Setup Instructions
 
