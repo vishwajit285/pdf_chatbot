@@ -1,10 +1,11 @@
-# app.py
+# app.py5
 import streamlit as st
 import os
 import base64
+import re
 import json
 from datetime import datetime
-from utils.pdf_handler import process_and_store_pdf
+from utils.pdf_handler import process_and_store_pdf,display_pdf
 from utils.retrieval import get_answer_conversational
 from utils.summarization import summarize_documents
 from utils.annotations import load_annotations, save_annotation
@@ -13,6 +14,7 @@ from utils.chroma_manager import get_chroma_client
 from utils.security import encrypt_pdf, decrypt_pdf, load_key
 from utils.visualization import generate_word_cloud
 from utils.external_data import fetch_external_data
+from utils.answer_audio_handler import generate_audio
 from PIL import Image
 from fpdf import FPDF
 from wordcloud import WordCloud
@@ -21,9 +23,19 @@ import pandas as pd
 import numpy as np
 import speech_recognition as sr
 from gtts import gTTS
+from utils.speech_handler import capture_voice_input
+import tempfile
+
+
 
 # Set custom page config
 st.set_page_config(page_title="Multi-PDF Chatbot", page_icon="📚", layout="wide")
+if 'voice_query' not in st.session_state:
+    st.session_state.voice_query = ""
+if 'text_query' not in st.session_state:
+    st.session_state.text_query = ""
+if 'generated_audio_file' not in st.session_state:
+    st.session_state.generated_audio_file = None
 
 # Custom CSS to style the app
 st.markdown("""
@@ -63,28 +75,23 @@ uploaded_pdfs = st.sidebar.file_uploader("Choose PDFs", type=['pdf'], accept_mul
 # Input for custom tags
 tags_input = st.sidebar.text_input("Enter tags (comma-separated):")
 
-# Voice Input
-if st.sidebar.button("Use Voice Input"):
-    recognizer = sr.Recognizer()
-    with sr.Microphone() as source:
-        st.sidebar.write("Listening...")
-        audio_data = recognizer.record(source, duration=5)
-        try:
-            query = recognizer.recognize_google(audio_data)
-            st.sidebar.write(f"You said: {query}")
-        except sr.UnknownValueError:
-            st.sidebar.error("Could not understand audio")
-        except sr.RequestError as e:
-            st.sidebar.error(f"Could not request results; {e}")
+
+TEMP_PDF_DIR = "data/temp_pdfs"
+if not os.path.exists(TEMP_PDF_DIR):
+    os.makedirs(TEMP_PDF_DIR)
 
 if uploaded_pdfs:
     tags = [tag.strip() for tag in tags_input.split(',')] if tags_input else []
     with st.spinner("Processing PDFs..."):
         for uploaded_pdf in uploaded_pdfs:
-            pdf_path = os.path.join('data/pdfs', uploaded_pdf.name)
-            with open(pdf_path, 'wb') as f:
+            # Save the uploaded PDF temporarily
+            temp_pdf_path = os.path.join(TEMP_PDF_DIR, uploaded_pdf.name)
+            with open(temp_pdf_path, 'wb') as f:
                 f.write(uploaded_pdf.getbuffer())
-            process_and_store_pdf(pdf_path, tags=tags)
+            
+            # Process and store the PDF with content-based uniqueness
+            process_and_store_pdf(temp_pdf_path, tags=tags)
+
     st.sidebar.success("PDFs have been processed and stored.")
 
 # Sidebar Settings
@@ -145,16 +152,45 @@ if st.sidebar.button("Show ChromaDB Content"):
 
 # Main content area
 st.subheader("💬 Ask Questions")
-st.write("Type your question below, and the chatbot will answer based on your PDFs.")
+st.write("Choose how you want to ask the question:")
+input_choice = st.radio("How would you like to ask your question?", ("Type", "Speak"))
+query_input = ""
 
-query_input = st.text_input("Enter your question here:")
+if input_choice == "Type":
+    query_input = st.text_input("Enter your question here:")
+    if query_input:
+        st.session_state.text_query = query_input
 
-if st.button("Get Answer"):
-    query = query_input
-    if query:
+# Handle Voice Input
+elif input_choice == "Speak":
+    if st.button("Start Recording"):
+        st.session_state.voice_query = capture_voice_input()  # Store the voice input in session state
+
+# Retrieve query from session state (either voice or text input)
+if input_choice == "Speak":
+    query_input = st.session_state.voice_query
+elif input_choice == "Type":
+    query_input = st.session_state.text_query
+
+# Display the current query to the user if it exists
+if query_input:
+    st.session_state.current_query = query_input
+    st.write(f"**Your question:** {query_input}")
+
+# Retrieve query from session state (either voice or text input)
+if input_choice == "Speak":
+    query_input = st.session_state.voice_query
+elif input_choice == "Type":
+    query_input = st.session_state.text_query
+
+
+print(query_input)
+
+if query_input:
+    if st.button("Get Answer"):
         with st.spinner("Searching for the answer..."):
             answer, source_documents = get_answer_conversational(
-                query,
+                query_input,
                 st.session_state.chat_history,
                 response_style=response_style,
                 language=language,
@@ -162,19 +198,24 @@ if st.button("Get Answer"):
             )
         # Save the question, answer, and source documents to session state
         st.session_state.conversation.append({
-            'question': query,
+            'question': query_input,
             'answer': answer,
             'source_documents': source_documents
         })
-        st.session_state.chat_history.append((query, answer))
+        st.session_state.chat_history.append((query_input, answer))
         st.success("**Answer:**")
         st.write(answer)
 
-        # Text-to-Speech for Answer
-        tts = gTTS(answer, lang=language[:2].lower())
-        tts.save("answer.mp3")
-        audio_file = open("answer.mp3", "rb")
-        st.audio(audio_file.read(), format="audio/mp3")
+                # Generate and Display the Audio for the Answer
+        st.session_state.generated_audio_file=generate_audio(answer, language=language)
+
+        # Display the generated MP3 file for the user to play
+        print(st.session_state.generated_audio_file)
+        
+        if st.session_state.generated_audio_file:
+            audio_file = open(st.session_state.generated_audio_file, "rb")
+            audio_bytes = audio_file.read()
+            st.audio(audio_bytes, format='audio/mp3')
 
         # Display the source PDFs
         st.subheader("📄 Source PDFs:")
@@ -182,19 +223,23 @@ if st.button("Get Answer"):
             doc.metadata.get('pdf_name', 'Unknown PDF') for doc in source_documents
         )
         for pdf_name in pdf_names:
-            st.write(f"- **{pdf_name}**")
-            pdf_base_name = pdf_name.split('_v')[0]
-            versions = [doc.metadata.get('version', 1) for doc in source_documents if doc.metadata.get('pdf_name') == pdf_name]
-            selected_version = st.selectbox(f"Select version for {pdf_base_name}:", versions, key=f"version_{pdf_base_name}")
-            versioned_pdf_name = f"{pdf_base_name}_v{selected_version}.pdf"
-            pdf_path = os.path.join('data/pdfs', versioned_pdf_name)
+            pdf_name_disp = re.sub(r'_[a-f0-9]{8}', '', pdf_name)
+            st.write(f"- **{pdf_name_disp}**")
+            # pdf_base_name = pdf_name.split('_v')[0]
+            # versions = [doc.metadata.get('version', 1) for doc in source_documents if doc.metadata.get('pdf_name') == pdf_name]
+            # selected_version = st.selectbox(f"Select version for {pdf_base_name}:", versions, key=f"version_{pdf_base_name}")
+            # versioned_pdf_name = f"{pdf_base_name}_v{selected_version}.pdf"
+            pdf_path = os.path.join('data/pdfs', pdf_name)
+        
             if os.path.exists(pdf_path):
                 max_pdf_size = 5 * 1024 * 1024  # 5 MB limit
                 pdf_size = os.path.getsize(pdf_path)
                 if pdf_size <= max_pdf_size:
-                    with st.expander(f"📖 View {pdf_name} (Version {selected_version})"):
-                        decrypted_pdf = decrypt_pdf(pdf_path)
-                        display_pdf(decrypted_pdf)
+                    pdf_name_disp = re.sub(r'_[a-f0-9]{8}', '', pdf_name)
+                    
+                    with st.expander(f"📖 View {pdf_name_disp}"):
+                        # decrypted_pdf = decrypt_pdf(pdf_path)
+                        display_pdf(pdf_path)
                 else:
                     st.warning(f"{pdf_name} is too large to display. Please download it to view.")
                     decrypted_pdf = decrypt_pdf(pdf_path)
@@ -204,25 +249,25 @@ if st.button("Get Answer"):
             else:
                 st.warning(f"File {pdf_name} not found.")
 
-            # Annotations
-            st.subheader(f"✏️ Annotations for {pdf_name}")
-            annotations = load_annotations()
-            existing_annotations = annotations.get(pdf_name, [])
-            st.write("**Existing Annotations:**")
-            for idx, note in enumerate(existing_annotations):
-                st.write(f"{idx + 1}. {note}")
-            new_annotation = st.text_area(f"Add a new annotation for {pdf_name}:", key=f"annotation_{pdf_name}")
-            if st.button(f"Save Annotation for {pdf_name}", key=f"save_annotation_{pdf_name}"):
-                save_annotation(pdf_name, new_annotation)
-                st.success(f"Annotation saved for {pdf_name}.")
+            # # Annotations
+            # st.subheader(f"✏️ Annotations for {pdf_name}")
+            # annotations = load_annotations()
+            # existing_annotations = annotations.get(pdf_name, [])
+            # st.write("**Existing Annotations:**")
+            # for idx, note in enumerate(existing_annotations):
+            #     st.write(f"{idx + 1}. {note}")
+            # new_annotation = st.text_area(f"Add a new annotation for {pdf_name}:", key=f"annotation_{pdf_name}")
+            # if st.button(f"Save Annotation for {pdf_name}", key=f"save_annotation_{pdf_name}"):
+            #     save_annotation(pdf_name, new_annotation)
+            #     st.success(f"Annotation saved for {pdf_name}.")
 
-        # AI-Powered Recommendations
-        recommended_pdfs = get_recommendations(query)
-        st.subheader("📚 You might also like:")
-        for pdf in recommended_pdfs:
-            st.write(f"- {pdf}")
+        # # AI-Powered Recommendations
+        # recommended_pdfs = get_recommendations(query)
+        # st.subheader("📚 You might also like:")
+        # for pdf in recommended_pdfs:
+        #     st.write(f"- {pdf}")
     else:
-        st.warning("Please enter a question.")
+        pass
 
 # Display conversation history
 if st.session_state.conversation:
@@ -238,7 +283,7 @@ if st.session_state.conversation:
             st.write(f"🔗 **Source PDF:** {pdf_name}")
 
 # Generate Report
-if st.button("Generate Report"):
+if st.sidebar.button("Generate Report"):
     report_content = ""
     for idx, qa in enumerate(st.session_state.conversation):
         report_content += f"Q{idx+1}: {qa['question']}\n"
@@ -280,8 +325,3 @@ st.sidebar.write("""
 - **Generate Report**: Export your conversation as a PDF report.
 """)
 
-# Functions
-def display_pdf(pdf_data):
-    base64_pdf = base64.b64encode(pdf_data).decode('utf-8')
-    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="700" height="1000" type="application/pdf"></iframe>'
-    st.markdown(pdf_display, unsafe_allow_html=True)

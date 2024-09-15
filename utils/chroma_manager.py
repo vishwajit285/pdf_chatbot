@@ -22,7 +22,7 @@ def get_chroma_client():
     #     chroma_db_impl='duckdb+parquet',
     #     persist_directory=persist_directory
     # ))
-    client = chromadb.PersistentClient(path="persist_directory")
+    client = chromadb.PersistentClient(path=persist_directory)
     
     return client
 

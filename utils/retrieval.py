@@ -18,7 +18,7 @@ def get_retriever(filters=None):
     vectorstore = Chroma(collection_name=collection_name, embedding_function=embeddings, client=client)
     
     # Now you can use as_retriever()
-    retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k":5})
+    retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k":1})
 
     if filters:
         retriever.search_kwargs['filter'] = filters
