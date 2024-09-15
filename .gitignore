@@ -28,4 +28,9 @@ persist_directory/
 *.mp3
 # Ignore Python bytecode cache directories
 __pycache__/
-chroma/
+data/chroma/*
+
+data/pdfs/*
+
+chroma/*
+pdfs/*
